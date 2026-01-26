@@ -1,1 +1,1 @@
-web: gunicorn nome_da_sua_pasta_principal.wsgi
+web: gunicorn config.wsgi
