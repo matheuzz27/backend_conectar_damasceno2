@@ -38,6 +38,8 @@ class Produto(models.Model):
     # DecimalField é melhor para dinheiro que FloatField
     precoCompra = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     precoVenda = models.DecimalField(max_digits=10, decimal_places=2)
+    tem_preco_prazo = models.BooleanField(default=False, verbose_name="Tem Preço a Prazo?")
+    preco_prazo = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Preço a Prazo")
 
     def __str__(self):
         return self.nome
