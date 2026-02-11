@@ -162,9 +162,7 @@ SIMPLE_JWT = {
 
 # --- CONFIGURAÇÃO DO CORS (Cross-Origin Resource Sharing) ---
 # Isto permite que o teu React (http://localhost:5173) faça pedidos a este Django (http://127.0.0.1:8000)
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173", # Vite padrão
-    "http://127.0.0.1:5173",
-]
+# settings.py no Django
+CORS_ALLOW_ALL_ORIGINS = True  # Permite que o app mobile conecte de qualquer lugar
 # Se quiseres permitir tudo (apenas em desenvolvimento!):
 # CORS_ALLOW_ALL_ORIGINS = True
