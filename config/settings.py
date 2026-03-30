@@ -52,15 +52,22 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware', # (Se estiver usando)
+    
+    # --- O CORS TEM QUE ESTAR AQUI (NO TOPO) ---
+    'corsheaders.middleware.CorsMiddleware', 
+    # -------------------------------------------
+    
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware', # Adicionado para CORS (deve vir antes do CommonMiddleware)
-    'django.middleware.common.CommonMiddleware',
+    'django.middleware.common.CommonMiddleware', # O CorsMiddleware deve vir ANTES desse
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware'
 ]
+
+# E no final do arquivo:
+CORS_ALLOW_ALL_ORIGINS = True
 
 ROOT_URLCONF = 'config.urls'
 
@@ -87,7 +94,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
 DATABASES = {
-    'default': dj_database_url.config(default='sqlite:///db.sqlite3')
+    'default': dj_database_url.config(
+        default=os.environ.get('DATABASE_URL'),
+        conn_max_age=600,
+        ssl_require=True 
+    )
 }
 
 # Password validation
