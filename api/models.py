@@ -1,11 +1,10 @@
-# api/models.py V3 (Completo)
-
+# api/models.py
 from django.db import models
 from django.contrib.auth.models import User
+from decimal import Decimal
+from datetime import date
 
-# --- LISTAS DE OPÇÕES (Predefinidas) ---
-
-# 1. Opções para VENDA (Aceita "PRAZO/Fiado")
+# --- LISTAS DE OPÇÕES ---
 OPCOES_PAGAMENTO_VENDA = [
     ('DINHEIRO', 'Dinheiro'),
     ('PIX', 'Pix'),
@@ -13,8 +12,6 @@ OPCOES_PAGAMENTO_VENDA = [
     ('PRAZO', 'A Prazo (Fiado)'),
 ]
 
-# 2. Opções para RECEBIMENTO DE DÍVIDA (NÃO aceita "PRAZO")
-# (Lógica: Não se paga uma dívida criando outra dívida)
 OPCOES_PAGAMENTO_RECEBIDO = [
     ('DINHEIRO', 'Dinheiro'),
     ('PIX', 'Pix'),
@@ -35,7 +32,6 @@ class Cliente(models.Model):
 
 class Produto(models.Model):
     nome = models.CharField(max_length=255, unique=True)
-    # DecimalField é melhor para dinheiro que FloatField
     precoCompra = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     precoVenda = models.DecimalField(max_digits=10, decimal_places=2)
     tem_preco_prazo = models.BooleanField(default=False, verbose_name="Tem Preço a Prazo?")
@@ -45,11 +41,8 @@ class Produto(models.Model):
         return self.nome
 
 class Venda(models.Model):
-    # Relacionamentos
     cliente = models.ForeignKey(Cliente, related_name='vendas', on_delete=models.PROTECT)
     vendedor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    
-    # Dados da Venda
     data = models.DateTimeField(auto_now_add=True)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
     desconto = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
@@ -61,8 +54,6 @@ class Venda(models.Model):
 class ItemVenda(models.Model):
     venda = models.ForeignKey(Venda, related_name='itens', on_delete=models.CASCADE)
     produto = models.ForeignKey(Produto, on_delete=models.PROTECT)
-    
-    # Snapshot dos dados do produto no momento da venda
     nome = models.CharField(max_length=255)
     quantidade = models.DecimalField(max_digits=10, decimal_places=3)
     valorUnitario = models.DecimalField(max_digits=10, decimal_places=2)
@@ -74,16 +65,25 @@ class ItemVenda(models.Model):
 
 class PagamentoVenda(models.Model):
     venda = models.ForeignKey(Venda, related_name='pagamento', on_delete=models.CASCADE)
-    
-    # Usa as opções COM PRAZO
-    metodo = models.CharField(
-        max_length=50, 
-        choices=OPCOES_PAGAMENTO_VENDA, 
-        default='DINHEIRO'
-    )
-    
+    metodo = models.CharField(max_length=50, choices=OPCOES_PAGAMENTO_VENDA, default='DINHEIRO')
     valor = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=50, default='PAGO') 
+
+    # 📈 INTELIGÊNCIA: JUROS AUTOMÁTICOS DE 3% A CADA 30 DIAS
+    @property
+    def valor_com_juros(self):
+        if self.metodo != 'PRAZO' or self.status != 'PENDENTE':
+            return self.valor
+        
+        dias_atraso = (date.today() - self.venda.data.date()).days
+        meses_atrasados = dias_atraso // 30 # Divide por 30 ignorando o resto (ex: 45 dias = 1 mês)
+        
+        if meses_atrasados > 0:
+            juros = Decimal('0.03') * meses_atrasados
+            valor_atualizado = self.valor * (Decimal('1.00') + juros)
+            return round(valor_atualizado, 2)
+        
+        return self.valor
 
 class Orcamento(models.Model):
     cliente = models.ForeignKey(Cliente, related_name='orcamentos', on_delete=models.PROTECT)
@@ -95,7 +95,6 @@ class Orcamento(models.Model):
 class ItemOrcamento(models.Model):
     orcamento = models.ForeignKey(Orcamento, related_name='itens', on_delete=models.CASCADE)
     produto = models.ForeignKey(Produto, on_delete=models.PROTECT)
-    
     nome = models.CharField(max_length=255)
     quantidade = models.DecimalField(max_digits=10, decimal_places=3)
     valorUnitario = models.DecimalField(max_digits=10, decimal_places=2)
@@ -106,13 +105,7 @@ class PagamentoRecebido(models.Model):
     cliente = models.ForeignKey(Cliente, related_name='pagamentos_recebidos', on_delete=models.PROTECT)
     data = models.DateTimeField(auto_now_add=True)
     valor = models.DecimalField(max_digits=10, decimal_places=2)
-    
-    # Usa as opções SEM PRAZO
-    metodo = models.CharField(
-        max_length=50, 
-        choices=OPCOES_PAGAMENTO_RECEBIDO, 
-        default='DINHEIRO'
-    )
+    metodo = models.CharField(max_length=50, choices=OPCOES_PAGAMENTO_RECEBIDO, default='DINHEIRO')
 
     def __str__(self):
         return f"Pagamento de {self.cliente.nome} - R${self.valor}"

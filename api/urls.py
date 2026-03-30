@@ -9,7 +9,8 @@ from .views import (
     OrcamentoViewSet, 
     PagamentoRecebidoViewSet,
     RelatorioDevedoresView,
-    DashboardView
+    DashboardView,
+    SuperAdminView
 )
 
 # Cria o Roteador Automático
@@ -34,4 +35,5 @@ urlpatterns = [
     # Rotas Manuais (Relatórios e Dashboard)
     path('relatorios/devedores/', RelatorioDevedoresView.as_view(), name='relatorio-devedores'),
     path('dashboard/', DashboardView.as_view(), name='dashboard'),
+    path('admin_actions/', SuperAdminView.as_view(), name='admin-actions'),
 ]
