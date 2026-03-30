@@ -153,25 +153,21 @@ class ProdutoViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({"erro": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    # 🚫 CANCELAR VENDA INTEIRA (Botão Vermelho Grande)
-    @action(detail=True, methods=['post'])
+    # Adicionamos o url_path para forçar o underline!
+    @action(detail=True, methods=['post'], url_path='cancelar_venda')
     def cancelar_venda(self, request, pk=None):
         venda = self.get_object()
         try:
             with transaction.atomic():
-                # Se no futuro você tiver estoque, a devolução entra aqui. 
-                # Por enquanto, só apagamos a venda para limpar as contas do cliente.
                 venda.delete()
             return Response({"mensagem": "Venda cancelada e excluída com sucesso!"}, status=status.HTTP_200_OK)
         except Exception as e:
-            print(f"ERRO AO CANCELAR: {str(e)}") 
             return Response({"erro": f"Erro interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-    # ➖ REMOVER APENAS UM ITEM DA VENDA (Lixeirinha do Item)
-    @action(detail=True, methods=['post', 'delete'])
+        
+    # Adicionamos o url_path para forçar o underline!
+    @action(detail=True, methods=['post', 'delete'], url_path='remover_item')
     def remover_item(self, request, pk=None):
         venda = self.get_object()
-        # Aceita o ID do item tanto por JSON (post) quanto por URL/Query (delete)
         item_id = request.data.get('item_id') or request.query_params.get('item_id')
 
         try:
@@ -181,17 +177,14 @@ class ProdutoViewSet(viewsets.ModelViewSet):
             with transaction.atomic():
                 item.delete()
                 
-                # Atualiza os totais da Venda Principal
                 venda.subtotal -= valor_removido
                 venda.total -= valor_removido
                 venda.save()
 
-                # Se a venda ficou zerada, apaga ela inteira
                 if venda.total <= 0:
                     venda.delete()
-                    return Response({"mensagem": "Venda inteira excluída pois ficou sem itens!"}, status=status.HTTP_200_OK)
+                    return Response({"mensagem": "Venda inteira excluída!"}, status=status.HTTP_200_OK)
 
-                # Abate a dívida do cliente (se foi a prazo)
                 dividas = PagamentoVenda.objects.filter(venda=venda, status='PENDENTE').exclude(metodo='DINHEIRO')
                 valor_para_abater = valor_removido
 
