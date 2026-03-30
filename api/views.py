@@ -156,7 +156,7 @@ class VendaViewSet(viewsets.ModelViewSet):
     queryset = Venda.objects.all().order_by('-data')
     serializer_class = VendaSerializer
 
-    # ⚡ OTIMIZAÇÃO FLASH: Salvando a venda inteira em 1 viagem ao Banco
+   # ⚡ OTIMIZAÇÃO FLASH: Salvando a venda inteira em 1 viagem ao Banco
     def create(self, request, *args, **kwargs):
         data = request.data
         try:
@@ -172,13 +172,28 @@ class VendaViewSet(viewsets.ModelViewSet):
 
                 # 2. Empacota os itens (Bulk Create)
                 itens_array = data.get('itens', [])
+                
+                # 🛡️ BLINDAGEM: Busca os dados reais dos produtos no banco (Evita erro de 'null')
+                produto_ids = [item.get('produto') or item.get('produto_id') for item in itens_array]
+                produtos_banco = {p.id: p for p in Produto.objects.filter(id__in=produto_ids)}
+
                 itens_para_salvar = []
                 for item in itens_array:
-                    produto_id = item.get('produto') or item.get('produto_id')
+                    p_id = item.get('produto') or item.get('produto_id')
+                    produto_real = produtos_banco.get(p_id)
+                    
+                    # Se o Frontend não mandou o nome, o Backend pega do banco automaticamente!
+                    nome_seguro = item.get('nome') or item.get('produto_nome') or (produto_real.nome if produto_real else 'Produto Desconhecido')
+                    preco_compra_seguro = item.get('precoCompra') or (produto_real.precoCompra if produto_real else 0)
+
                     itens_para_salvar.append(ItemVenda(
-                        venda=venda, produto_id=produto_id, nome=item.get('nome'),
-                        quantidade=item.get('quantidade'), valorUnitario=item.get('valorUnitario', item.get('preco_venda')),
-                        valorFinal=item.get('valorFinal', item.get('total')), precoCompra=item.get('precoCompra', 0)
+                        venda=venda, 
+                        produto_id=p_id, 
+                        nome=nome_seguro,
+                        quantidade=item.get('quantidade', 1), 
+                        valorUnitario=item.get('valorUnitario', item.get('preco_venda', 0)),
+                        valorFinal=item.get('valorFinal', item.get('total', 0)), 
+                        precoCompra=preco_compra_seguro
                     ))
                 ItemVenda.objects.bulk_create(itens_para_salvar)
 
@@ -187,14 +202,15 @@ class VendaViewSet(viewsets.ModelViewSet):
                 pgtos_para_salvar = []
                 for pg in pgtos_array:
                     pgtos_para_salvar.append(PagamentoVenda(
-                        venda=venda, metodo=pg.get('metodo'), valor=pg.get('valor'),
+                        venda=venda, 
+                        metodo=pg.get('metodo'), 
+                        valor=pg.get('valor'),
                         status=pg.get('status', 'PAGO' if pg.get('metodo') != 'PRAZO' else 'PENDENTE')
                     ))
                 PagamentoVenda.objects.bulk_create(pgtos_para_salvar)
-
-            # Usamos o Serializer para retornar no formato que o Frontend gosta
+                
             return Response(VendaSerializer(venda).data, status=status.HTTP_201_CREATED)
-            
+        
         except Exception as e:
             return Response({"erro": f"Erro ao salvar: {str(e)}"}, status=500)
 
