@@ -141,16 +141,73 @@ class ProdutoViewSet(viewsets.ModelViewSet):
     queryset = Produto.objects.exclude(nome__startswith="(EXCLUÍDO)").order_by('nome')
     serializer_class = ProdutoSerializer
 
+    # 🗑️ EXCLUSÃO PADRÃO (Botão da Lixeirinha)
     def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
+        venda = self.get_object()
         try:
-            self.perform_destroy(instance)
-            return Response(status=status.HTTP_204_NO_CONTENT)
-        except ProtectedError:
-            nome_antigo = instance.nome
-            instance.nome = f"(EXCLUÍDO) {nome_antigo}"
-            instance.save()
-            return Response({"mensagem": "Produto desativado."}, status=status.HTTP_200_OK)
+            with transaction.atomic():
+                # O Django já usa CASCADE e apaga os itens e pagamentos vinculados automaticamente
+                venda.delete()
+            # Retornamos 200 OK com JSON para o React não travar!
+            return Response({"mensagem": "Venda excluída com sucesso!"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"erro": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    # 🚫 CANCELAR VENDA INTEIRA (Botão Vermelho Grande)
+    @action(detail=True, methods=['post'])
+    def cancelar_venda(self, request, pk=None):
+        venda = self.get_object()
+        try:
+            with transaction.atomic():
+                # Se no futuro você tiver estoque, a devolução entra aqui. 
+                # Por enquanto, só apagamos a venda para limpar as contas do cliente.
+                venda.delete()
+            return Response({"mensagem": "Venda cancelada e excluída com sucesso!"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            print(f"ERRO AO CANCELAR: {str(e)}") 
+            return Response({"erro": f"Erro interno: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    # ➖ REMOVER APENAS UM ITEM DA VENDA (Lixeirinha do Item)
+    @action(detail=True, methods=['post', 'delete'])
+    def remover_item(self, request, pk=None):
+        venda = self.get_object()
+        # Aceita o ID do item tanto por JSON (post) quanto por URL/Query (delete)
+        item_id = request.data.get('item_id') or request.query_params.get('item_id')
+
+        try:
+            item = ItemVenda.objects.get(id=item_id, venda=venda)
+            valor_removido = item.valorFinal
+
+            with transaction.atomic():
+                item.delete()
+                
+                # Atualiza os totais da Venda Principal
+                venda.subtotal -= valor_removido
+                venda.total -= valor_removido
+                venda.save()
+
+                # Se a venda ficou zerada, apaga ela inteira
+                if venda.total <= 0:
+                    venda.delete()
+                    return Response({"mensagem": "Venda inteira excluída pois ficou sem itens!"}, status=status.HTTP_200_OK)
+
+                # Abate a dívida do cliente (se foi a prazo)
+                dividas = PagamentoVenda.objects.filter(venda=venda, status='PENDENTE').exclude(metodo='DINHEIRO')
+                valor_para_abater = valor_removido
+
+                for parcela in dividas:
+                    if valor_para_abater <= 0: break
+                    if parcela.valor > valor_para_abater:
+                        parcela.valor -= valor_para_abater
+                        parcela.save()
+                        valor_para_abater = 0
+                    else:
+                        valor_para_abater -= parcela.valor
+                        parcela.delete()
+
+            return Response({"mensagem": "Item removido com sucesso!"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"erro": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class VendaViewSet(viewsets.ModelViewSet):
     queryset = Venda.objects.all().order_by('-data')
@@ -208,7 +265,7 @@ class VendaViewSet(viewsets.ModelViewSet):
                         status=pg.get('status', 'PAGO' if pg.get('metodo') != 'PRAZO' else 'PENDENTE')
                     ))
                 PagamentoVenda.objects.bulk_create(pgtos_para_salvar)
-                
+
             return Response(VendaSerializer(venda).data, status=status.HTTP_201_CREATED)
         
         except Exception as e:
